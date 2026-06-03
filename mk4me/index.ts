@@ -1,30 +1,75 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
-import { createOpencode } from "@opencode-ai/sdk";
+import { createOpencode, type OpencodeClient } from "@opencode-ai/sdk";
 
 const RULES =
   "You must use `export default function` to declare the function. ONLY return code in the output. The first line, before the function declaration must act as a description of the function, in JSDoc format. Ensure that it follows strict TypeScript linting rules. You don't need to use a linter, but respect common linting rules.";
 
-const { client, server } = await createOpencode({
-  config: {
-    model: "openai/gpt-5.4-fast",
-  },
-});
+type OpencodeInstance = {
+  client: OpencodeClient;
+  server: {
+    url: string;
+    close(): void;
+  };
+};
 
-const sessionID = client.session.create().then(({ data, error }) => {
-  if (error) {
-    throw error;
+let opencode: Promise<OpencodeInstance> | undefined;
+let sessionID: Promise<string> | undefined;
+
+function getOpencode() {
+  if (!opencode) {
+    opencode = createOpencode({
+      config: {
+        model: "openai/gpt-5.4-fast",
+      },
+    }).catch((error: unknown) => {
+      opencode = undefined;
+      throw new Error(
+        `Failed to start OpenCode: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    });
   }
 
-  if (!data) {
-    throw new Error("Failed to create OpenCode session");
+  return opencode;
+}
+
+function getSessionID() {
+  if (!sessionID) {
+    sessionID = getOpencode()
+      .then(({ client }) => client.session.create())
+      .then(({ data, error }) => {
+        if (error) {
+          throw error;
+        }
+
+        if (!data) {
+          throw new Error("Failed to create OpenCode session");
+        }
+
+        return data.id;
+      })
+      .catch((error: unknown) => {
+        sessionID = undefined;
+        throw error;
+      });
   }
 
-  return data.id;
-});
+  return sessionID;
+}
 
 export function closeMk4me() {
-  server.close();
+  if (!opencode) {
+    return;
+  }
+
+  const currentOpencode = opencode;
+  opencode = undefined;
+  sessionID = undefined;
+  void currentOpencode
+    .then(({ server }) => server.close())
+    .catch(() => undefined);
 }
 
 class _Make4Me {}
@@ -65,19 +110,21 @@ export const mk4me = new Proxy(new _Make4Me(), {
 
       return (...args: unknown[]) => {
         console.warn(`GENERATING ${functionName}`);
-        return sessionID
+        return getSessionID()
           .then((id) =>
-            client.session.prompt({
-              path: { id },
-              body: {
-                parts: [
-                  {
-                    type: "text",
-                    text: `Create a function based on its title: ${functionName}.RULES: ${RULES}`,
-                  },
-                ],
-              },
-            }),
+            getOpencode().then(({ client }) =>
+              client.session.prompt({
+                path: { id },
+                body: {
+                  parts: [
+                    {
+                      type: "text",
+                      text: `Create a function based on its title: ${functionName}.RULES: ${RULES}`,
+                    },
+                  ],
+                },
+              }),
+            ),
           )
           .then((result) => {
             if (result.error) {
