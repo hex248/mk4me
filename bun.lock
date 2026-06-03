@@ -4,6 +4,9 @@
   "workspaces": {
     "": {
       "name": "mkit4me",
+      "dependencies": {
+        "@types/node": "^25.9.1",
+      },
       "devDependencies": {
         "@types/bun": "latest",
       },
