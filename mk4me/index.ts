@@ -95,6 +95,7 @@ export const mk4me = new Proxy(new _Make4Me(), {
               return args;
             }
             fs.writeFileSync(`./mk4me/${functionName}.ts`, response.text);
+            existingFunctions.add(existingFunction);
             console.log(
               `generated function ${functionName} saved to mk4me/${functionName}.ts`,
             );
