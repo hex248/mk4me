@@ -22,5 +22,8 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
-  }
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["mk4me/**/*.ts"],
+  "files": ["mk4me/index.ts"]
 }
