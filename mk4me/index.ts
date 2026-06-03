@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createOpencode, type OpencodeClient } from "@opencode-ai/sdk";
 
 const RULES =
@@ -83,9 +85,27 @@ type FunctionModule = {
 };
 
 const require = createRequire(import.meta.url);
+const mk4meDirectory = fileURLToPath(new URL(".", import.meta.url));
+const validFunctionName = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
+
+function getFunctionFile(functionName: string) {
+  if (!validFunctionName.test(functionName)) {
+    throw new TypeError(`Invalid function name: ${functionName}`);
+  }
+
+  const fileName = `${functionName}.ts`;
+  const filePath = path.resolve(mk4meDirectory, fileName);
+
+  if (!filePath.startsWith(mk4meDirectory)) {
+    throw new TypeError(`Invalid function path: ${functionName}`);
+  }
+
+  return { fileName, filePath };
+}
+
 const existingFunctions = new Set(
   fs
-    .readdirSync("./mk4me/")
+    .readdirSync(mk4meDirectory)
     .filter((f) => f !== "index.ts" && f.endsWith(".ts")),
 );
 const loadedFunctions = new Map<string, (...args: unknown[]) => unknown>();
@@ -95,13 +115,13 @@ export const mk4me = new Proxy(new _Make4Me(), {
     // if function is not in the _Make4Me class
     if (typeof functionName === "string" && !(functionName in target)) {
       // attempt to find already generated function in mk4me directory
-      const existingFunction = `${functionName}.ts`;
-      if (existingFunctions.has(existingFunction)) {
+      const functionFile = getFunctionFile(functionName);
+      if (existingFunctions.has(functionFile.fileName)) {
         return (...args: unknown[]) => {
-          let func = loadedFunctions.get(existingFunction);
+          let func = loadedFunctions.get(functionFile.fileName);
           if (!func) {
-            func = (require(`./${existingFunction}`) as FunctionModule).default;
-            loadedFunctions.set(existingFunction, func);
+            func = (require(functionFile.filePath) as FunctionModule).default;
+            loadedFunctions.set(functionFile.fileName, func);
           }
 
           return func(...args);
@@ -129,7 +149,9 @@ export const mk4me = new Proxy(new _Make4Me(), {
           .then((result) => {
             if (result.error) {
               console.error(result.error);
-              return args;
+              return new Error(
+                `failed to generate function ${functionName}: ${result.error}`,
+              );
             }
 
             // read code response
@@ -139,16 +161,18 @@ export const mk4me = new Proxy(new _Make4Me(), {
 
             if (!response) {
               console.error("no response from OpenCode");
-              return args;
+              return new Error(
+                `failed to generate function ${functionName}: no response from OpenCode`,
+              );
             }
-            fs.writeFileSync(`./mk4me/${functionName}.ts`, response.text);
-            existingFunctions.add(existingFunction);
+            fs.writeFileSync(functionFile.filePath, response.text);
+            existingFunctions.add(functionFile.fileName);
             console.log(
-              `generated function ${functionName} saved to mk4me/${functionName}.ts`,
+              `generated function ${functionName} saved to mk4me/${functionFile.fileName}`,
             );
-            const func = (require(`./${existingFunction}`) as FunctionModule)
+            const func = (require(functionFile.filePath) as FunctionModule)
               .default;
-            loadedFunctions.set(existingFunction, func);
+            loadedFunctions.set(functionFile.fileName, func);
 
             return func(...args);
           });
