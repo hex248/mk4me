@@ -139,7 +139,7 @@ export const mk4me = new Proxy(new _Make4Me(), {
                   parts: [
                     {
                       type: "text",
-                      text: `Create a function based on its title: ${functionName}.RULES: ${RULES}`,
+                      text: `Create a function based on its title: ${functionName}. Also take into account the arguments provided, for context on how it should function: ${args}. If multiple args are provided, and it seems like it could be a non exact number of args, consider that in your implementation. Ensure you consider the argument types too. RULES: ${RULES}`,
                     },
                   ],
                 },
