@@ -1,3 +1,13 @@
 # mkit4me
 
-generate functions on the go
+Generate functions on the go
+
+## Usage
+
+```bash
+bun install
+```
+
+```bash
+bun run index.ts
+```
