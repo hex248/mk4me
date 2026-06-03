@@ -1,5 +1,5 @@
 {
-	"editor.codeActionsOnSave": {
-		"source.organizeImports.biome": "always"
-	}
+  "editor.codeActionsOnSave": {
+    "source.organizeImports.biome": "always"
+  }
 }
