@@ -1,5 +1,8 @@
 {
   "$schema": "https://biomejs.dev/schemas/latest/schema.json",
+  "files": {
+    "includes": ["**", "!mk4me/**/*.ts", "mk4me/index.ts"]
+  },
   "formatter": {
     "enabled": true,
     "formatWithErrors": false,
