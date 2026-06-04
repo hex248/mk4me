@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const RULES =
-  "You must use `export default function` to declare the function. ONLY return code in the output. The first line before the function declaration must act as a description of the function, in JSDoc format. Ensure that it follows strict TypeScript linting rules. You don't need to use a linter, but respect common linting rules. If multiple args are provided, and it seems like it could be a non exact number of args, consider that in your implementation. If you can confidently assume that the number of args is fixed based on the combination of args and the function title, then go with that. Ensure you consider the argument types too.";
+  "You must use `export default function` to declare the function. ONLY return code - do NOT wrap it in markdown code blocks or backticks of any kind. The first line before the function declaration must act as a description of the function, in JSDoc format. Ensure that it follows strict TypeScript linting rules. You don't need to use a linter, but respect common linting rules. If multiple args are provided, and it seems like it could be a non exact number of args, consider that in your implementation. If you can confidently assume that the number of args is fixed based on the combination of args and the function title, then go with that. Ensure you consider the argument types too.";
 
 class _Make4Me {}
 
@@ -75,8 +75,34 @@ async function executePrompt(command: string): Promise<string> {
 
     return output;
   } else if (process.env.HARNESS === "claude") {
-    // claude -p --bare --model=claude-sonnet-4-6
-    return "";
+    // claude -p --model=claude-sonnet-4-6
+    const proc = Bun.spawn(
+      ["claude", "-p", `--model=${process.env.MODEL}`, command],
+      {
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+
+    const decoder = new TextDecoder();
+
+    let output = "";
+    let error = "";
+
+    for await (const chunk of proc.stdout) {
+      output += decoder.decode(chunk, { stream: true });
+    }
+    output += decoder.decode(); // flush remaining decoder state
+
+    const exitCode = await proc.exited;
+
+    error = await new Response(proc.stderr).text();
+
+    if (exitCode !== 0) {
+      throw new Error(error || `claude exited with code ${exitCode}`);
+    }
+
+    return output;
   } else if (process.env.HARNESS === "codex") {
     // codex exec --ephemeral --skip-git-repo-check --model=gpt-5.4-mini "<prompt>"
     const proc = Bun.spawn(
@@ -109,7 +135,7 @@ async function executePrompt(command: string): Promise<string> {
     error = await new Response(proc.stderr).text();
 
     if (exitCode !== 0) {
-      throw new Error(error || `opencode exited with code ${exitCode}`);
+      throw new Error(error || `codex exited with code ${exitCode}`);
     }
 
     return output;
