@@ -1,4 +1,4 @@
-import { closeMk4me, mk4me } from ".";
+import { mk4me } from ".";
 
 try {
   // executes without generating anything, as expected
@@ -11,6 +11,6 @@ try {
 
   // test to ensure it respects args
   console.log(await mk4me.calculate_perimeter?.(5, 10, 15, 20, 25));
-} finally {
-  closeMk4me();
+} catch (err) {
+  console.error(err);
 }

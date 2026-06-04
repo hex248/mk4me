@@ -2,77 +2,9 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createOpencode, type OpencodeClient } from "@opencode-ai/sdk";
 
 const RULES =
-  "You must use `export default function` to declare the function. ONLY return code in the output. The first line, before the function declaration must act as a description of the function, in JSDoc format. Ensure that it follows strict TypeScript linting rules. You don't need to use a linter, but respect common linting rules.";
-
-type OpencodeInstance = {
-  client: OpencodeClient;
-  server: {
-    url: string;
-    close(): void;
-  };
-};
-
-let opencode: Promise<OpencodeInstance> | undefined;
-let sessionID: Promise<string> | undefined;
-
-function getOpencode() {
-  if (!opencode) {
-    opencode = createOpencode({
-      config: {
-        model: "openai/gpt-5.4-fast",
-      },
-    }).catch((error: unknown) => {
-      opencode = undefined;
-      throw new Error(
-        `Failed to start OpenCode: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    });
-  }
-
-  return opencode;
-}
-
-function getSessionID() {
-  if (!sessionID) {
-    sessionID = getOpencode()
-      .then(({ client }) => client.session.create())
-      .then(({ data, error }) => {
-        if (error) {
-          throw error;
-        }
-
-        if (!data) {
-          throw new Error("Failed to create OpenCode session");
-        }
-
-        return data.id;
-      })
-      .catch((error: unknown) => {
-        sessionID = undefined;
-        throw error;
-      });
-  }
-
-  return sessionID;
-}
-
-export function closeMk4me() {
-  if (!opencode) {
-    return;
-  }
-
-  const currentOpencode = opencode;
-  opencode = undefined;
-  sessionID = undefined;
-  void currentOpencode
-    .then(({ server }) => server.close())
-    .catch(() => undefined);
-}
+  "You must use `export default function` to declare the function. ONLY return code in the output. The first line before the function declaration must act as a description of the function, in JSDoc format. Ensure that it follows strict TypeScript linting rules. You don't need to use a linter, but respect common linting rules. If multiple args are provided, and it seems like it could be a non exact number of args, consider that in your implementation. If you can confidently assume that the number of args is fixed based on the combination of args and the function title, then go with that. Ensure you consider the argument types too.";
 
 class _Make4Me {}
 
@@ -108,6 +40,83 @@ function getFunctionFile(functionName: string) {
 
   return { fileName, filePath };
 }
+/** executes a prompt for the given harness and model, and returns the result as a string */
+async function executePrompt(command: string): Promise<string> {
+  console.log(
+    `Executing prompt: ${command}\nHARNESS=${process.env.HARNESS}\nMODEL=${process.env.MODEL}`,
+  );
+  if (process.env.HARNESS === "opencode") {
+    // opencode run --pure --model=<process.env.MODEL> "<prompt>"
+    const proc = Bun.spawn(
+      ["opencode", "run", "--pure", `--model=${process.env.MODEL}`, command],
+      {
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+
+    const decoder = new TextDecoder();
+
+    let output = "";
+    let error = "";
+
+    for await (const chunk of proc.stdout) {
+      output += decoder.decode(chunk, { stream: true });
+    }
+    output += decoder.decode(); // flush remaining decoder state
+
+    const exitCode = await proc.exited;
+
+    error = await new Response(proc.stderr).text();
+
+    if (exitCode !== 0) {
+      throw new Error(error || `opencode exited with code ${exitCode}`);
+    }
+
+    return output;
+  } else if (process.env.HARNESS === "claude") {
+    // claude -p --bare --model=claude-sonnet-4-6
+    return "";
+  } else if (process.env.HARNESS === "codex") {
+    // codex exec --ephemeral --skip-git-repo-check --model=gpt-5.4-mini "<prompt>"
+    const proc = Bun.spawn(
+      [
+        "codex",
+        "exec",
+        "--ephemeral",
+        "--skip-git-repo-check",
+        `--model=${process.env.MODEL}`,
+        command,
+      ],
+      {
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+
+    const decoder = new TextDecoder();
+
+    let output = "";
+    let error = "";
+
+    for await (const chunk of proc.stdout) {
+      output += decoder.decode(chunk, { stream: true });
+    }
+    output += decoder.decode(); // flush remaining decoder state
+
+    const exitCode = await proc.exited;
+
+    error = await new Response(proc.stderr).text();
+
+    if (exitCode !== 0) {
+      throw new Error(error || `opencode exited with code ${exitCode}`);
+    }
+
+    return output;
+  } else {
+    throw new Error(`Invalid HARNESS=${process.env.HARNESS}`);
+  }
+}
 
 const existingFunctions = new Set(
   fs.readdirSync(generatedFunctionsDirectory).filter((f) => f.endsWith(".ts")),
@@ -132,54 +141,20 @@ export const mk4me = new Proxy(new _Make4Me(), {
         };
       }
 
-      return (...args: unknown[]) => {
+      return async (...args: unknown[]) => {
         console.warn(`GENERATING ${functionName}`);
-        return getSessionID()
-          .then((id) =>
-            getOpencode().then(({ client }) =>
-              client.session.prompt({
-                path: { id },
-                body: {
-                  parts: [
-                    {
-                      type: "text",
-                      text: `Create a function based on its title: ${functionName}. Also take into account the arguments provided, for context on how it should function: ${args}. If multiple args are provided, and it seems like it could be a non exact number of args, consider that in your implementation. Ensure you consider the argument types too. RULES: ${RULES}`,
-                    },
-                  ],
-                },
-              }),
-            ),
-          )
-          .then((result) => {
-            if (result.error) {
-              console.error(result.error);
-              return new Error(
-                `failed to generate function ${functionName}: ${result.error}`,
-              );
-            }
+        const prompt = `Create a function based on its title: ${functionName}. Also take into account the arguments provided, for context on how it should function: ${args}. RULES: ${RULES}`;
+        const result = await executePrompt(prompt);
 
-            // read code response
-            const response = result.data.parts.filter(
-              (part) => part.type === "text",
-            )[0];
+        fs.writeFileSync(functionFile.filePath, result);
+        existingFunctions.add(functionFile.fileName);
+        console.log(
+          `generated function ${functionName} saved to generated_functions/${functionFile.fileName}`,
+        );
+        const func = (require(functionFile.filePath) as FunctionModule).default;
+        loadedFunctions.set(functionFile.fileName, func);
 
-            if (!response) {
-              console.error("no response from OpenCode");
-              return new Error(
-                `failed to generate function ${functionName}: no response from OpenCode`,
-              );
-            }
-            fs.writeFileSync(functionFile.filePath, response.text);
-            existingFunctions.add(functionFile.fileName);
-            console.log(
-              `generated function ${functionName} saved to generated_functions/${functionFile.fileName}`,
-            );
-            const func = (require(functionFile.filePath) as FunctionModule)
-              .default;
-            loadedFunctions.set(functionFile.fileName, func);
-
-            return func(...args);
-          });
+        return func(...args);
       };
     }
 
