@@ -1,4 +1,4 @@
-# mkit4me
+# mk4me
 
 Generate functions on the go
 
