@@ -5,16 +5,12 @@ import { fileURLToPath } from "node:url";
 import { log } from "./log";
 
 const RULES =
-  "You must use `export default function` to declare the function. ONLY return code - do NOT wrap it in markdown code blocks or backticks of any kind. The first line before the function declaration must act as a description of the function, in JSDoc format. Ensure that it follows strict TypeScript linting rules. You don't need to use a linter, but respect common linting rules. If multiple args are provided, and it seems like it could be a non exact number of args, consider that in your implementation. If you can confidently assume that the number of args is fixed based on the combination of args and the function title, then go with that. Ensure you consider the argument types too.";
+  "You must use `export function` to declare the function. ONLY return code - do NOT wrap it in markdown code blocks or backticks of any kind. The first line before the function declaration must act as a description of the function, in JSDoc format. Ensure that it follows strict TypeScript linting rules. You don't need to use a linter, but respect common linting rules. If multiple args are provided, and it seems like it could be a non exact number of args, consider that in your implementation. If you can confidently assume that the number of args is fixed based on the combination of args and the function title, then go with that. Ensure you consider the argument types too.";
 
 class _Make4Me {}
 
 type DynamicMethods = {
   [K in string]: (...args: unknown[]) => unknown;
-};
-
-type FunctionModule = {
-  default: (...args: unknown[]) => unknown;
 };
 
 const require = createRequire(import.meta.url);
@@ -160,7 +156,13 @@ export const mk4me = new Proxy(new _Make4Me(), {
         return (...args: unknown[]) => {
           let func = loadedFunctions.get(functionFile.fileName);
           if (!func) {
-            func = (require(functionFile.filePath) as FunctionModule).default;
+            func = (require(functionFile.filePath) as DynamicMethods)[
+              functionName
+            ];
+            if (!func)
+              throw new Error(
+                `Function ${functionName} not found in ${functionFile.filePath}`,
+              );
             loadedFunctions.set(functionFile.fileName, func);
           }
 
@@ -178,7 +180,13 @@ export const mk4me = new Proxy(new _Make4Me(), {
         log.debug(
           `generated function ${functionName} saved to generated_functions/${functionFile.fileName}`,
         );
-        const func = (require(functionFile.filePath) as FunctionModule).default;
+        const func = (require(functionFile.filePath) as DynamicMethods)[
+          functionName
+        ];
+        if (!func)
+          throw new Error(
+            `Function ${functionName} not found in ${functionFile.filePath}`,
+          );
         loadedFunctions.set(functionFile.fileName, func);
 
         return func(...args);
