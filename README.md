@@ -22,7 +22,7 @@ bun opencode|claude|codex
 
 ## Environment Variables
 
-`HARNESS`: `opencode`|`claude`|`codex`
+`HARNESS`: `opencode`|`claude`|`codex`<br/>
 `MODEL`: `openai/gpt-5.4-fast`|`claude-sonnet-4-6`|`gpt-5.4-mini`
 
 ## Todo
