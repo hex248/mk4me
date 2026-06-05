@@ -172,7 +172,11 @@ export const mk4me = new Proxy(new _Make4Me(), {
 
       return async (...args: unknown[]) => {
         log.debug(`GENERATING ${functionName}`);
-        const prompt = `Create a function based on its title: ${functionName}. Also take into account the arguments provided, for context on how it should function: ${JSON.stringify(args)}. RULES: ${RULES}`;
+        const ARGS =
+          args.length > 0
+            ? `Arguments provided: ${JSON.stringify(args)}. Consider these in your implementation, for context on how the user expects this to function.`
+            : `No arguments were provided. Consider this in your implementation, for context on how the user expects this to function.`;
+        const prompt = `Create a function based on its title: ${functionName}. ${ARGS} RULES: ${RULES}`;
         const result = await executePrompt(prompt);
 
         fs.writeFileSync(functionFile.filePath, result);
