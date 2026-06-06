@@ -4,6 +4,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { log } from "./log";
 
+const HARNESS = process.env.HARNESS ?? "opencode";
+const MODEL = process.env.MODEL ?? "openai/gpt-5.4-fast";
+
 const RULES =
   "You must use `export function` to declare the function. ONLY return code - do NOT wrap it in markdown code blocks or backticks of any kind. The first line before the function declaration must act as a description of the function, in JSDoc format. Ensure that it follows strict TypeScript linting rules. You don't need to use a linter, but respect common linting rules. If multiple args are provided, and it seems like it could be a non exact number of args, consider that in your implementation. If you can confidently assume that the number of args is fixed based on the combination of args and the function title, then go with that. Ensure you consider the argument types too.";
 
@@ -23,7 +26,7 @@ const validFunctionName = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
 
 fs.mkdirSync(generatedFunctionsDirectory, { recursive: true });
 
-function getFunctionFile(functionName: string) {
+export function getFunctionFile(functionName: string) {
   if (!validFunctionName.test(functionName)) {
     const err = `Invalid function name: ${functionName}`;
     log.error(err);
@@ -43,14 +46,11 @@ function getFunctionFile(functionName: string) {
 }
 /** executes a prompt for the given harness and model, and returns the result as a string */
 async function executePrompt(command: string): Promise<string> {
-  log.debug(
-    { prompt: command, harness: process.env.HARNESS, model: process.env.MODEL },
-    true,
-  );
-  if (process.env.HARNESS === "opencode") {
-    // opencode run --pure --model=<process.env.MODEL> "<prompt>"
+  log.debug({ prompt: command, harness: HARNESS, model: MODEL }, true);
+  if (HARNESS === "opencode") {
+    // opencode run --pure --model=<MODEL> "<prompt>"
     const proc = Bun.spawn(
-      ["opencode", "run", "--pure", `--model=${process.env.MODEL}`, command],
+      ["opencode", "run", "--pure", `--model=${MODEL}`, command],
       {
         stdout: "pipe",
         stderr: "pipe",
@@ -78,15 +78,12 @@ async function executePrompt(command: string): Promise<string> {
     }
 
     return output;
-  } else if (process.env.HARNESS === "claude") {
+  } else if (HARNESS === "claude") {
     // claude -p --model=claude-sonnet-4-6
-    const proc = Bun.spawn(
-      ["claude", "-p", `--model=${process.env.MODEL}`, command],
-      {
-        stdout: "pipe",
-        stderr: "pipe",
-      },
-    );
+    const proc = Bun.spawn(["claude", "-p", `--model=${MODEL}`, command], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
 
     const decoder = new TextDecoder();
 
@@ -109,7 +106,7 @@ async function executePrompt(command: string): Promise<string> {
     }
 
     return output;
-  } else if (process.env.HARNESS === "codex") {
+  } else if (HARNESS === "codex") {
     // codex exec --ephemeral --skip-git-repo-check --model=gpt-5.4-mini "<prompt>"
     const proc = Bun.spawn(
       [
@@ -117,7 +114,7 @@ async function executePrompt(command: string): Promise<string> {
         "exec",
         "--ephemeral",
         "--skip-git-repo-check",
-        `--model=${process.env.MODEL}`,
+        `--model=${MODEL}`,
         command,
       ],
       {
@@ -148,17 +145,17 @@ async function executePrompt(command: string): Promise<string> {
 
     return output;
   } else {
-    throw new Error(`Invalid HARNESS=${process.env.HARNESS}`);
+    throw new Error(`Invalid HARNESS=${HARNESS}`);
   }
 }
 
 const snippetSize = 5; // this will get the two lines above, the line of usage, and two lines below
 
-function getSnippetFromStack(stack?: string): string {
+export function getSnippetFromStack(stack?: string): string {
   let snippet = "";
   if (!stack) return "";
 
-  const helpfulLine = stack.split("\n")[2];
+  const helpfulLine = stack.split(/\r?\n/)[2];
   if (!helpfulLine) return "";
 
   const path = helpfulLine
@@ -174,7 +171,7 @@ function getSnippetFromStack(stack?: string): string {
 
   const linesOffset = Math.floor(snippetSize / 2);
   const file = fs.readFileSync(filePath, "utf-8");
-  const lines = file.split("\n");
+  const lines = file.split(/\r?\n/);
   for (let i = lineNumber - linesOffset; i < lineNumber + linesOffset; i++) {
     snippet += `${lines[i]}\n`;
   }
@@ -201,7 +198,7 @@ export async function createFunction(
   fs.writeFileSync(functionFile.filePath, result);
 }
 
-const existingFunctions = new Set(
+export const existingFunctions = new Set(
   fs.readdirSync(generatedFunctionsDirectory).filter((f) => f.endsWith(".ts")),
 );
 const loadedFunctions = new Map<string, (...args: unknown[]) => unknown>();
