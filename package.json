@@ -6,7 +6,10 @@
   "scripts": {
     "opencode": "HARNESS=opencode MODEL=openai/gpt-5.4-fast bun run playground.ts",
     "claude": "HARNESS=claude MODEL=claude-sonnet-4-6 bun run playground.ts",
-    "codex": "HARNESS=codex MODEL=gpt-5.4-mini bun run playground.ts"
+    "codex": "HARNESS=codex MODEL=gpt-5.4-mini bun run playground.ts",
+    "purge": "find generated_functions -maxdepth 1 -type f -name '*.ts' ! -name 'existing_function.ts' -delete",
+    "compile": "bun run compile.ts",
+    "recompile": "bun purge && bun compile"
   },
   "devDependencies": {
     "@types/bun": "latest"
