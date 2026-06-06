@@ -20,6 +20,8 @@ Run playground script which will demonstrate function generation and recall
 bun opencode|claude|codex
 ```
 
+See `playground.ts` for examples.
+
 ## Environment Variables
 
 `HARNESS`: `opencode`|`claude`|`codex`<br/>

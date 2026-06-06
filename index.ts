@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { log } from "./log";
+import { logs } from "./logs";
 
 const RULES =
   "You must use `export function` to declare the function. ONLY return code - do NOT wrap it in markdown code blocks or backticks of any kind. The first line before the function declaration must act as a description of the function, in JSDoc format. Ensure that it follows strict TypeScript linting rules. You don't need to use a linter, but respect common linting rules. If multiple args are provided, and it seems like it could be a non exact number of args, consider that in your implementation. If you can confidently assume that the number of args is fixed based on the combination of args and the function title, then go with that. Ensure you consider the argument types too.";
@@ -25,14 +26,18 @@ fs.mkdirSync(generatedFunctionsDirectory, { recursive: true });
 
 function getFunctionFile(functionName: string) {
   if (!validFunctionName.test(functionName)) {
-    throw new TypeError(`Invalid function name: ${functionName}`);
+    const err = `Invalid function name: ${functionName}`;
+    log.error(err);
+    throw new TypeError(err);
   }
 
   const fileName = `${functionName}.ts`;
   const filePath = path.resolve(generatedFunctionsDirectory, fileName);
 
   if (!filePath.startsWith(generatedFunctionsDirectory)) {
-    throw new TypeError(`Invalid function path: ${functionName}`);
+    const err = `Invalid function path: ${functionName}`;
+    log.error(err);
+    throw new TypeError(err);
   }
 
   return { fileName, filePath };
@@ -40,7 +45,8 @@ function getFunctionFile(functionName: string) {
 /** executes a prompt for the given harness and model, and returns the result as a string */
 async function executePrompt(command: string): Promise<string> {
   log.debug(
-    `Executing prompt: ${command}\nHARNESS=${process.env.HARNESS}\nMODEL=${process.env.MODEL}`,
+    { prompt: command, harness: process.env.HARNESS, model: process.env.MODEL },
+    true,
   );
   if (process.env.HARNESS === "opencode") {
     // opencode run --pure --model=<process.env.MODEL> "<prompt>"
@@ -67,7 +73,9 @@ async function executePrompt(command: string): Promise<string> {
     error = await new Response(proc.stderr).text();
 
     if (exitCode !== 0) {
-      throw new Error(error || `opencode exited with code ${exitCode}`);
+      const err = error || `opencode exited with code ${exitCode}`;
+      log.error(err);
+      throw new Error(err);
     }
 
     return output;
@@ -96,7 +104,9 @@ async function executePrompt(command: string): Promise<string> {
     error = await new Response(proc.stderr).text();
 
     if (exitCode !== 0) {
-      throw new Error(error || `claude exited with code ${exitCode}`);
+      const err = error || `claude exited with code ${exitCode}`;
+      log.error(err);
+      throw new Error(err);
     }
 
     return output;
@@ -132,7 +142,9 @@ async function executePrompt(command: string): Promise<string> {
     error = await new Response(proc.stderr).text();
 
     if (exitCode !== 0) {
-      throw new Error(error || `codex exited with code ${exitCode}`);
+      const err = error || `codex exited with code ${exitCode}`;
+      log.error(err);
+      throw new Error(err);
     }
 
     return output;
@@ -189,10 +201,11 @@ export const mk4me = new Proxy(new _Make4Me(), {
             func = (require(functionFile.filePath) as DynamicMethods)[
               functionName
             ];
-            if (!func)
-              throw new Error(
-                `Function ${functionName} not found in ${functionFile.filePath}`,
-              );
+            if (!func) {
+              const err = `Function ${functionName} not found in ${functionFile.filePath}`;
+              log.error(err);
+              throw new Error(err);
+            }
             loadedFunctions.set(functionFile.fileName, func);
           }
 
@@ -201,9 +214,9 @@ export const mk4me = new Proxy(new _Make4Me(), {
       }
 
       return async (...args: unknown[]) => {
-        log.debug(`GENERATING ${functionName}`);
-        const snippet = getSnippetFromStack(new Error().stack);
+        log.debug(`GENERATING ${functionName}`, true);
 
+        const snippet = getSnippetFromStack(new Error().stack);
         const ARGS =
           args.length > 0
             ? `Arguments provided: ${JSON.stringify(args)}. Consider these in your implementation, for context on how the user expects this to function.`
@@ -214,15 +227,17 @@ export const mk4me = new Proxy(new _Make4Me(), {
         fs.writeFileSync(functionFile.filePath, result);
         existingFunctions.add(functionFile.fileName);
         log.debug(
-          `generated function ${functionName} saved to generated_functions/${functionFile.fileName}`,
+          `Generated function ${functionName} saved to generated_functions/${functionFile.fileName}`,
+          true,
         );
         const func = (require(functionFile.filePath) as DynamicMethods)[
           functionName
         ];
-        if (!func)
-          throw new Error(
-            `Function ${functionName} not found in ${functionFile.filePath}`,
-          );
+        if (!func) {
+          const err = `Function ${functionName} not found in ${functionFile.filePath}`;
+          log.error(err);
+          throw new Error(err);
+        }
         loadedFunctions.set(functionFile.fileName, func);
 
         return func(...args);
