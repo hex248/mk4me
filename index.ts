@@ -141,6 +141,36 @@ async function executePrompt(command: string): Promise<string> {
   }
 }
 
+const snippetSize = 5; // this will get the two lines above, the line of usage, and two lines below
+
+function getSnippetFromStack(stack?: string): string {
+  let snippet = "";
+  if (!stack) return "";
+
+  const helpfulLine = stack.split("\n")[2];
+  if (!helpfulLine) return "";
+
+  const path = helpfulLine
+    .split(" ")
+    [helpfulLine.split(" ").length - 1]?.replace("(", "")
+    .replace(")", "");
+  if (!path) return "";
+
+  const filePath = path.split(":")[0];
+  if (!filePath) return "";
+  const lineNumber = Number(path.split(":")[1]);
+  if (!lineNumber) return "";
+
+  const linesOffset = Math.floor(snippetSize / 2);
+  const file = fs.readFileSync(filePath, "utf-8");
+  const lines = file.split("\n");
+  for (let i = lineNumber - linesOffset; i < lineNumber + linesOffset; i++) {
+    snippet += `${lines[i]}\n`;
+  }
+
+  return snippet;
+}
+
 const existingFunctions = new Set(
   fs.readdirSync(generatedFunctionsDirectory).filter((f) => f.endsWith(".ts")),
 );
@@ -172,11 +202,13 @@ export const mk4me = new Proxy(new _Make4Me(), {
 
       return async (...args: unknown[]) => {
         log.debug(`GENERATING ${functionName}`);
+        const snippet = getSnippetFromStack(new Error().stack);
+
         const ARGS =
           args.length > 0
             ? `Arguments provided: ${JSON.stringify(args)}. Consider these in your implementation, for context on how the user expects this to function.`
             : `No arguments were provided. Consider this in your implementation, for context on how the user expects this to function.`;
-        const prompt = `Create a function based on its title: ${functionName}. ${ARGS} RULES: ${RULES}`;
+        const prompt = `Create a function based on its title: ${functionName}.\n${ARGS}\n ${snippet !== "" ? `Here is a snippet of the code where the function is being called, use this for further context on the user's idea of this function's purpose and behaviour. There may be comments, or other code around it that you can use as additional context: ${snippet}\n` : ""} RULES: ${RULES}`;
         const result = await executePrompt(prompt);
 
         fs.writeFileSync(functionFile.filePath, result);
