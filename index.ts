@@ -3,7 +3,6 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { log } from "./log";
-import { logs } from "./logs";
 
 const RULES =
   "You must use `export function` to declare the function. ONLY return code - do NOT wrap it in markdown code blocks or backticks of any kind. The first line before the function declaration must act as a description of the function, in JSDoc format. Ensure that it follows strict TypeScript linting rules. You don't need to use a linter, but respect common linting rules. If multiple args are provided, and it seems like it could be a non exact number of args, consider that in your implementation. If you can confidently assume that the number of args is fixed based on the combination of args and the function title, then go with that. Ensure you consider the argument types too.";
@@ -183,6 +182,25 @@ function getSnippetFromStack(stack?: string): string {
   return snippet;
 }
 
+export async function createFunction(
+  args: unknown[],
+  functionName: string,
+  functionFile: {
+    fileName: string;
+    filePath: string;
+  },
+  snippet: string,
+) {
+  const ARGS =
+    args.length > 0
+      ? `Arguments provided: ${JSON.stringify(args)}. Consider these in your implementation, for context on how the user expects this to function.`
+      : `No arguments were provided. Consider this in your implementation, for context on how the user expects this to function.`;
+  const prompt = `Create a function based on its title: ${functionName}.\n${ARGS}\n ${snippet !== "" ? `Here is a snippet of the code where the function is being called, use this for further context on the user's idea of this function's purpose and behaviour. There may be comments, or other code around it that you can use as additional context: ${snippet}\n` : ""} RULES: ${RULES}`;
+  const result = await executePrompt(prompt);
+
+  fs.writeFileSync(functionFile.filePath, result);
+}
+
 const existingFunctions = new Set(
   fs.readdirSync(generatedFunctionsDirectory).filter((f) => f.endsWith(".ts")),
 );
@@ -217,14 +235,9 @@ export const mk4me = new Proxy(new _Make4Me(), {
         log.debug(`GENERATING ${functionName}`, true);
 
         const snippet = getSnippetFromStack(new Error().stack);
-        const ARGS =
-          args.length > 0
-            ? `Arguments provided: ${JSON.stringify(args)}. Consider these in your implementation, for context on how the user expects this to function.`
-            : `No arguments were provided. Consider this in your implementation, for context on how the user expects this to function.`;
-        const prompt = `Create a function based on its title: ${functionName}.\n${ARGS}\n ${snippet !== "" ? `Here is a snippet of the code where the function is being called, use this for further context on the user's idea of this function's purpose and behaviour. There may be comments, or other code around it that you can use as additional context: ${snippet}\n` : ""} RULES: ${RULES}`;
-        const result = await executePrompt(prompt);
 
-        fs.writeFileSync(functionFile.filePath, result);
+        await createFunction(args, functionName, functionFile, snippet);
+
         existingFunctions.add(functionFile.fileName);
         log.debug(
           `Generated function ${functionName} saved to generated_functions/${functionFile.fileName}`,
