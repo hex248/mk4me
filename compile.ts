@@ -22,9 +22,52 @@ if (process.argv.slice(2).length === 0) {
 
 const paths: string[] = [];
 
+/** Checks if a file path should be ignored */
+function isIgnored(filePath: string) {
+  let ignoredPaths = [
+    "node_modules",
+    "generated_functions",
+    "dist",
+    "build",
+    ".git",
+  ];
+  if (fs.existsSync(".gitignore")) {
+    const gitignore = fs.readFileSync(".gitignore", "utf-8");
+    ignoredPaths = gitignore
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#"));
+  }
+  // properly check ignored paths against filePath just as git does
+  return ignoredPaths.some((ignoredPath) => {
+    if (ignoredPath.endsWith("/")) ignoredPath = ignoredPath.slice(0, -1);
+    if (ignoredPath.startsWith("/")) ignoredPath = ignoredPath.slice(1);
+    if (filePath.includes(`/${ignoredPath}/`)) return true;
+    if (filePath.endsWith(`/${ignoredPath}`)) return true;
+    return false;
+  });
+}
+
+/** Recursively gets all .ts files in a directory */
+function getTsFiles(dir: string) {
+  const results: string[] = [];
+  const list = fs.readdirSync(dir);
+  list.forEach((file) => {
+    const filePath = `${dir}/${file}`;
+    const stat = fs.statSync(filePath);
+    if (stat?.isDirectory()) {
+      if (!isIgnored(filePath)) results.push(...getTsFiles(filePath));
+    } else if (file.endsWith(".ts")) {
+      if (!isIgnored(filePath)) results.push(filePath);
+    }
+  });
+  return results;
+}
+
 for (const path of process.argv.slice(2)) {
   if ([".", "./"].includes(path) || fs.statSync(path)?.isDirectory()) {
     // loop through all children, find .ts files and add their paths
+    paths.push(...getTsFiles(path));
   } else if (fs.existsSync(path)) paths.push(path);
   else {
     throw new Error(`File does not exist: ${path}`);
@@ -33,6 +76,7 @@ for (const path of process.argv.slice(2)) {
 
 type FunctionRequest = {
   originFile: string;
+  originLine: number;
   args: unknown[];
   functionName: string;
   functionFile: {
@@ -94,12 +138,17 @@ function visit(sourceFile: ts.SourceFile, node: ts.Node) {
       expression.expression.text === "mk4me"
     ) {
       const functionName = expression.name.text;
+      if (functionsRequested.some((f) => f.functionName === functionName))
+        return; // if we've already requested this function, skip it
       const functionFile = getFunctionFile(functionName);
 
       const snippet = getSnippetFromNode(sourceFile, expression, 2);
 
       const request = {
         originFile: sourceFile.fileName,
+        originLine: sourceFile.getLineAndCharacterOfPosition(
+          expression.getStart(sourceFile),
+        ).line,
         functionName,
         args: node.arguments.map((arg) => arg.getText(sourceFile)),
         functionFile,
@@ -139,7 +188,7 @@ for (const request of functionsRequested) {
       console.log(`${request.originFile}:`);
     }
     console.log(
-      ` - generating ${request.functionName} (${request.originFile})`,
+      ` - generating ${request.functionName} (${request.originFile}:${request.originLine})`,
     );
     functionGenerationPromises.push(
       createFunction(
