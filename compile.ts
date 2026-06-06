@@ -185,10 +185,12 @@ for (const request of functionsRequested) {
   if (!existingFunctions.has(request.functionFile.fileName)) {
     if (!processed.has(request.originFile)) {
       processed.add(request.originFile);
-      console.log(`${request.originFile}:`);
+      console.log(
+        `\u001b[1m\u001b[4m${request.originFile}:\u001b[24m\u001b[22m`,
+      );
     }
     console.log(
-      ` - generating ${request.functionName} (${request.originFile}:${request.originLine})`,
+      `${request.originFile}:${request.originLine} - ${request.functionName}`,
     );
     functionGenerationPromises.push(
       createFunction(
